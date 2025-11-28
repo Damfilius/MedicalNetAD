@@ -169,8 +169,14 @@ class BrainS18Dataset(Dataset):
 
     def __training_data_process__(self, data, label): 
         # crop data according net input size
-        data = data.get_data()
-        label = label.get_data()
+        # data = data.get_fdata()
+        # label = label.get_fdata()
+
+        data = np.asanyarray(data.dataobj)
+        label = np.asanyarray(label.dataobj)
+
+        # data = data.get_data()
+        # label = label.get_data()
         
         # drop out the invalid range
         data, label = self.__drop_invalid_range__(data, label)
