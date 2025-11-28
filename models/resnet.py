@@ -7,7 +7,7 @@ from functools import partial
 
 __all__ = [
     'ResNet', 'resnet10', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
-    'resnet152', 'resnet200'
+    'resnet152', 'resnet200', 'ADClassification'
 ]
 
 
@@ -251,6 +251,17 @@ def resnet200(**kwargs):
 
 class ADClassification(nn.Module):
     def __init__(self, scale=50, num_classes=3, *args, **kwargs):
+        """
+        Constructor for the ADClassifictation task
+
+        - scale: model depth
+        - num_classes: number of classification classes
+
+        Based on the model depth, using the dictionary scale_to_params
+        the constructor gets the appropriate neural network block 
+        (either BasicBlock or Bottleneck) and the layers to be initialized
+        within the Med3D backbone
+        """
         super().__init__(*args, **kwargs)
         self.scale = scale
         self.num_classes = num_classes
