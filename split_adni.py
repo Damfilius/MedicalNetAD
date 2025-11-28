@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
+import time
 import random
 
 def write_split(split,filename):
@@ -21,6 +22,9 @@ def split_dataset(root_dir, split_ratio):
 
     # shuffle the array contents
     np.random.Generator.shuffle(records_by_subject)
+    t = f"{time.time()}".replace(".","_")
+    filename = os.path.join(root_dir, f"subject_order_{t}.txt")
+    write_split(records_by_subject, filename)
 
     # create the split
     train_count = split_ratio * len(records)
@@ -35,16 +39,24 @@ def split_dataset(root_dir, split_ratio):
         if (train_count - len(train_set) < len(subject_record)/4):
             continue
 
-        train_set.append(subject_record)
+        # get the image id and append ".nii" to it
+        train_set.append(subject_record[0] + ".nii")
         remove_idx.append(idx)
 
     # whatever is left-over
-    test_set = np.delete(records_by_subject,remove_idx,axis=0)
+    test_set_subjects = np.delete(records_by_subject,remove_idx,axis=0)
+    test_set = [record[0] + ".nii" for record in test_set_subjects]
 
     train_names = os.path.join(root_dir,"train.txt")
     test_names = os.path.join(root_dir,"test.txt")
-    write_split(train_set,train_names)
-    write_split(test_set,test_names)
+
+    with open(train_names,"w+") as fp:
+        for image_id in train_set:
+            fp.write(f"{image_id}")
+
+    with open(test_names,"w+") as fp:
+        for image_id in test_set:
+            fp.write(f"{image_id}")
 
     return train_set,test_set
         

@@ -11,6 +11,36 @@ import numpy as np
 from torch.utils.data import Dataset
 import nibabel
 from scipy import ndimage
+from split_adni import split_dataset
+import pandas as pd
+from pathlib import Path
+
+
+class ADNIDataset(Dataset):
+    def __init__(self, split_set, root_dir="./../adni/", train=False):
+        super().__init__()
+        if not os.path.exists(root_dir):
+            raise Exception("Your root directory does not exist...")
+
+        self.img_names = split_set
+        self.img_paths = [os.path.join(root_dir,name) for name in self.img_names]
+        self.label_file = os.path.join(root_dir,"labels.csv")
+        self.records = pd.read_csv(self.label_file).to_numpy()
+
+    def __len__(self):
+        return len(self.img_names)
+
+    def __getitem__(self, index):
+        image_path = self.img_paths[index]
+        img = nibabel.load(image_path)
+        image_id = Path(image_path).stem()
+        label_idx = np.where(image_id in self.records, self.records)
+        label = self.records[label_idx][0][0]
+
+        return img,label
+
+
+
 
 class BrainS18Dataset(Dataset):
 
