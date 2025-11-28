@@ -7,7 +7,8 @@ SAFE_GLOBALS = [__name__]
 
 def generate_model(opt):
     assert opt.model in [
-        'resnet'
+        'resnet',
+        'adclassifier'
     ]
 
     if opt.model == 'resnet':
@@ -69,24 +70,26 @@ def generate_model(opt):
                 shortcut_type=opt.resnet_shortcut,
                 no_cuda=opt.no_cuda,
                 num_seg_classes=opt.n_seg_classes)
-    
+    else:
+        model = resnet.ADClassification(opt.model_depth,opt.num_classes)
+
     if not opt.no_cuda:
         if len(opt.gpu_id) > 1:
             model = model.cuda() 
             model = nn.DataParallel(model, device_ids=opt.gpu_id)
-            net_dict = model.state_dict() 
+            net_dict = model.state_dict() if opt.model == 'resnet' else model.backbone.state_dict()
         else:
             import os
             os.environ["CUDA_VISIBLE_DEVICES"]=str(opt.gpu_id[0])
             model = model.cuda() 
             model = nn.DataParallel(model, device_ids=None)
-            net_dict = model.state_dict()
+            net_dict = model.state_dict() if opt.model == 'resnet' else model.backbone.state_dict()
     else:
-        net_dict = model.state_dict()
+        net_dict = model.state_dict() if opt.model == 'resnet' else model.backbone.state_dict()
 
 
     if opt.phase != 'test' and opt.pretrain_path:
-        print(f'正在加载预训练模型 {opt.pretrain_path}')
+        print(f'Pre-train path: {opt.pretrain_path}')
         try:
             with torch.serialization.safe_globals(SAFE_GLOBALS):
                 pretrain = torch.load(
@@ -96,23 +99,27 @@ def generate_model(opt):
                 )
         
         except FileNotFoundError:
-            raise FileNotFoundError(f"预训练模型文件不存在: {opt.pretrain_path}")
+            raise FileNotFoundError(f"No such file: {opt.pretrain_path}")
         except RuntimeError as e:
             if "is not in the safe globals list" in str(e):
                 raise RuntimeError(
-                    f"加载模型时安全检查失败！请将相关模块添加到白名单。错误详情：{e}\n"
-                    f"当前白名单模块：{SAFE_GLOBALS}"
+                    f"Security check failed while loading the model!"
+                    f"Please add the relevant module to the whitelist. Error details：{e}\n"
+                    f"Current whitelist module：{SAFE_GLOBALS}"
                 ) from e
             else:
-                raise RuntimeError(f"加载预训练模型失败：{e}") from e
+                raise RuntimeError(f"Loading pre-trained model failure：{e}") from e
         except Exception as e:
-            raise Exception(f"加载模型时发生未知错误：{e}") from e
+            raise Exception(f"An unknown error occurred while loading the model.：{e}") from e
         
         
         pretrain_dict = {k: v for k, v in pretrain['state_dict'].items() if k in net_dict.keys()}
          
         net_dict.update(pretrain_dict)
-        model.load_state_dict(net_dict)
+        if opt.model == 'resnet':
+            model.load_state_dict(net_dict)
+        else:
+            model.backbone.load_state_dict(net_dict)
 
         new_parameters = [] 
         for pname, p in model.named_parameters():
