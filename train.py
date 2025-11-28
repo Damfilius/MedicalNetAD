@@ -96,6 +96,22 @@ def train(data_loader, model, optimizer, scheduler, total_epochs, save_interval,
         exit()
 
 
+def load_train_test_set(sets):
+    # prepare the file names of the train and test sets
+    train_file = os.path.join(sets.data_root,"train.txt")
+    test_file = os.path.join(sets.data_root,"test.txt")
+    train_set, test_set = [], []
+    if os.path.getsize(train_file) > 0 and os.path.getsize(test_file) > 0:
+        with open(train_file,"r+") as fp:
+            train_set = fp.readlines()
+        with open(test_file,"r+") as fp:
+            test_set = fp.readlines()
+    else:
+        train_set, test_set = split_dataset(sets.data_root,sets.split_ratio)
+
+    return train_set, test_set
+
+
 if __name__ == '__main__':
     # settting
     sets = parse_opts()   
@@ -146,17 +162,7 @@ if __name__ == '__main__':
     else:
         sets.pin_memory = True    
 
-    # prepare the file names of the train and test sets
-    train_file = os.path.join(sets.data_root,"train.txt")
-    test_file = os.path.join(sets.data_root,"test.txt")
-    train_set, test_set = [], []
-    if os.path.getsize(train_file) > 0 and os.path.getsize(test_file) > 0:
-        with open(train_file,"r+") as fp:
-            train_set = fp.readlines()
-        with open(test_file,"r+") as fp:
-            test_set = fp.readlines()
-    else:
-        train_set, test_set = split_dataset(sets.data_root,sets.split_ratio)
+    train_set, test_set = load_train_test_set(sets)
 
     # intitialize datasets
     training_dataset = ADNIDataset(train_set, sets.data_root, True)
@@ -164,6 +170,7 @@ if __name__ == '__main__':
     # training_dataset = BrainS18Dataset(sets.data_root, sets.img_list, sets)
     train_loader = DataLoader(training_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
     test_loader = DataLoader(testing_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
+    breakpoint()
 
     # training
     train(train_loader, model, optimizer, scheduler, total_epochs=sets.n_epochs, save_interval=sets.save_intervals, save_folder=sets.save_folder, sets=sets) 
