@@ -24,6 +24,7 @@ def conv3x3x3(in_planes, out_planes, stride=1, dilation=1):
 
 
 def downsample_basic_block(x, planes, stride, no_cuda=False):
+    """Pads with 0s according to the planes value - set by the expansion of the Bottleneck layer"""
     out = F.avg_pool3d(x, kernel_size=1, stride=stride)
     zero_pads = torch.Tensor(
         out.size(0), planes - out.size(1), out.size(2), out.size(3),
@@ -134,6 +135,8 @@ class ResNet(nn.Module):
         self.bn1 = nn.BatchNorm3d(64)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool3d(kernel_size=(3, 3, 3), stride=2, padding=1)
+
+        # your block is usually a Bottleneck layer
         self.layer1 = self._make_layer(block, 64, layers[0], shortcut_type)
         self.layer2 = self._make_layer(
             block, 128, layers[1], shortcut_type, stride=2)
@@ -142,31 +145,15 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(
             block, 512, layers[3], shortcut_type, stride=1, dilation=4)
 
-        self.conv_seg = nn.Sequential(
-                                        nn.ConvTranspose3d(
-                                        512 * block.expansion,
-                                        32,
-                                        2,
-                                        stride=2
-                                        ),
-                                        nn.BatchNorm3d(32),
-                                        nn.ReLU(inplace=True),
-                                        nn.Conv3d(
-                                        32,
-                                        32,
-                                        kernel_size=3,
-                                        stride=(1, 1, 1),
-                                        padding=(1, 1, 1),
-                                        bias=False), 
-                                        nn.BatchNorm3d(32),
-                                        nn.ReLU(inplace=True),
-                                        nn.Conv3d(
-                                        32,
-                                        num_seg_classes,
-                                        kernel_size=1,
-                                        stride=(1, 1, 1),
-                                        bias=False) 
-                                        )
+        # Code for segmentation
+        # self.conv_seg = nn.Sequential(
+        #     nn.ConvTranspose3d(512 * block.expansion, 32, 2, stride=2),
+        #     nn.BatchNorm3d(32),
+        #     nn.ReLU(inplace=True),
+        #     nn.Conv3d(32,32, kernel_size=3, stride=(1, 1, 1), padding=(1, 1, 1), bias=False), 
+        #     nn.BatchNorm3d(32),
+        #     nn.ReLU(inplace=True),
+        #     nn.Conv3d(32, num_seg_classes, kernel_size=1, stride=(1, 1, 1), bias=False))
 
         for m in self.modules():
             if isinstance(m, nn.Conv3d):
@@ -210,7 +197,7 @@ class ResNet(nn.Module):
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
-        x = self.conv_seg(x)
+        # x = self.conv_seg(x)
 
         return x
 
@@ -261,3 +248,34 @@ def resnet200(**kwargs):
     """
     model = ResNet(Bottleneck, [3, 24, 36, 3], **kwargs)
     return model
+
+class ADClassification(nn.Module):
+    def __init__(self, scale=50, num_classes=3, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.scale = scale
+        self.num_classes = num_classes
+
+        if self.scale not in [10,18,34,50,101,152,200]:
+            raise Exception("Your scale must be one of; [10, 18, 34, 50, 101, 152, 200]")
+
+        self.scale_to_params = {
+            10: [BasicBlock,[1, 1, 1, 1]],
+            18: [BasicBlock,[2, 2, 2, 2]],
+            34: [BasicBlock,[3, 4, 6, 3]],
+            50: [Bottleneck,[3, 4, 6, 3]],
+            101: [Bottleneck,[3, 4, 23, 3]],
+            152: [Bottleneck,[3, 8, 36, 3]],
+            200: [Bottleneck,[3, 24, 36, 3]]
+        }
+
+        [self.block,self.layers] = self.scale_to_params[scale] 
+        self.backbone = ResNet(self.block, self.layers, **kwargs)
+        self.head = nn.Sequential(
+            nn.Linear(512 * self.block.expansion, self.num_classes)
+        )
+
+    def forward(self, x):
+        x = self.backbone(x)
+        x = self.head(x)
+
+        return x
