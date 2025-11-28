@@ -15,6 +15,14 @@ from scipy import ndimage
 class BrainS18Dataset(Dataset):
 
     def __init__(self, root_dir, img_list, sets):
+        """
+        Constructor BrainS18Dataset class
+
+        Parameters:
+        - root_dir: directory containing your MRI images
+        - img_list: path to the text file describining all MRI images you want
+        - sets: command line arguments
+        """
         with open(img_list, 'r') as f:
             self.img_list = [line.strip() for line in f]
         print("Processing {} datas".format(len(self.img_list)))
@@ -174,9 +182,6 @@ class BrainS18Dataset(Dataset):
 
         data = np.asanyarray(data.dataobj)
         label = np.asanyarray(label.dataobj)
-
-        # data = data.get_data()
-        # label = label.get_data()
         
         # drop out the invalid range
         data, label = self.__drop_invalid_range__(data, label)
