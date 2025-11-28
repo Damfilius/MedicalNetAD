@@ -4,7 +4,7 @@ Written by Whalechen
 '''
 
 from setting import parse_opts 
-from datasets.brains18 import BrainS18Dataset 
+from datasets.brains18 import BrainS18Dataset, ADNIDataset
 from model import generate_model
 import torch
 import numpy as np
@@ -16,6 +16,7 @@ import time
 from utils.logger import log
 from scipy import ndimage
 import os
+from split_adni import split_dataset
 
 def train(data_loader, model, optimizer, scheduler, total_epochs, save_interval, save_folder, sets):
     # settings
@@ -144,8 +145,25 @@ if __name__ == '__main__':
         sets.pin_memory = False
     else:
         sets.pin_memory = True    
-    training_dataset = BrainS18Dataset(sets.data_root, sets.img_list, sets)
-    data_loader = DataLoader(training_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
+
+    # prepare the file names of the train and test sets
+    train_file = os.path.join(sets.data_root,"train.txt")
+    test_file = os.path.join(sets.data_root,"test.txt")
+    train_set, test_set = [], []
+    if os.path.getsize(train_file) > 0 and os.path.getsize(test_file) > 0:
+        with open(train_file,"r+") as fp:
+            train_set = fp.readlines()
+        with open(test_file,"r+") as fp:
+            test_set = fp.readlines()
+    else:
+        train_set, test_set = split_dataset(sets.data_root,sets.split_ratio)
+
+    # intitialize datasets
+    training_dataset = ADNIDataset(train_set, sets.data_root, True)
+    testing_dataset = ADNIDataset(test_set, sets.data_root, True)
+    # training_dataset = BrainS18Dataset(sets.data_root, sets.img_list, sets)
+    train_loader = DataLoader(training_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
+    test_loader = DataLoader(testing_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
 
     # training
-    train(data_loader, model, optimizer, scheduler, total_epochs=sets.n_epochs, save_interval=sets.save_intervals, save_folder=sets.save_folder, sets=sets) 
+    train(train_loader, model, optimizer, scheduler, total_epochs=sets.n_epochs, save_interval=sets.save_intervals, save_folder=sets.save_folder, sets=sets) 
