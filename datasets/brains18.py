@@ -34,8 +34,8 @@ class ADNIDataset(Dataset):
         image_path = self.img_paths[index]
         img = nibabel.load(image_path)
         image_id = Path(image_path).stem()
-        label_idx = np.where(image_id in self.records, self.records)
-        label = self.records[label_idx][0][0]
+        cond = [image_id in record for record in self.records]
+        label = self.records[cond][0]
 
         return img,label
 
