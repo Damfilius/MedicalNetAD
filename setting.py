@@ -9,7 +9,7 @@ def parse_opts():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--data_root',
-        default='./data',
+        default='./adni',
         type=str,
         help='Root directory path of data')
     parser.add_argument(
@@ -92,10 +92,16 @@ def parse_opts():
         type=int,              
         help='Gpu id lists')
     parser.add_argument(
+        "--split_ratio",
+        default=0.7,
+        type=float,
+        help="Ratio of the total dataset that will be the training set."
+    )
+    parser.add_argument(
         '--model',
         default='resnet',
         type=str,
-        help='(resnet | preresnet | wideresnet | resnext | densenet | ')
+        help='(resnet | preresnet | wideresnet | resnext | densenet | adclassifier ')
     parser.add_argument(
         '--model_depth',
         default=50,
