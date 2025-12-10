@@ -28,28 +28,39 @@ class ADNIDataset(Dataset):
         if not os.path.exists(root_dir):
             raise Exception("Your root directory does not exist...")
 
+        self.train = train
         self.img_names = split_set
-        self.img_paths = [os.path.join(root_dir, name) for name in self.img_names]
+        self.image_root_dir = os.path.join(root_dir, "images")
+        self.img_paths = [os.path.join(self.image_root_dir, str.strip(name)) for name in self.img_names]
         self.label_file = os.path.join(root_dir, "labels.csv")
         self.records = pd.read_csv(self.label_file).to_numpy()
 
     def __len__(self):
         return len(self.img_names)
 
+    def __nii2tensorarray__(self, nii_img):
+        data = np.asanyarray(nii_img.dataobj)
+        [z, y, x] = data.shape
+        new_data = np.reshape(data, [1, z, y, x])
+        new_data = new_data.astype("float32")
+        return new_data
+
     def __getitem__(self, index):
         # load the image
         image_path = self.img_paths[index]
-        img = nibabel.load(image_path)
+        nii_img = nibabel.load(image_path)
+        img = self.__nii2tensorarray__(nii_img)
+        []
         if not self.train:
             return img
 
         # for training you also have to return the label
-        image_id = Path(image_path).stem()
+        image_id = Path(image_path).stem
         cond = [image_id in record for record in self.records]
         record = self.records[cond][0] # extract the record with the respective image id
         cls = record[2] # get the class from the record
-        label = self.class_to_distribution(cls)
-        return img, label
+        label = self.class_to_distribution[cls]
+        return [img, label]
 
 
 class BrainS18Dataset(Dataset):
