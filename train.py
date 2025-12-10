@@ -19,7 +19,7 @@ import os
 from split_adni import split_dataset
 import wandb
 
-os.environ['WANDB_API_KEY'] = '###################################'
+os.environ['WANDB_API_KEY'] = '################################'
 
 def train(data_loader, model, optimizer, scheduler, total_epochs,
           save_interval, save_folder, sets):
@@ -35,6 +35,7 @@ def train(data_loader, model, optimizer, scheduler, total_epochs,
         loss_fn = loss_fn.cuda()
         
     model.train()
+    device = next(model.parameters()).device
     train_time_sp = time.time()
     for epoch in range(total_epochs):
         log.info('Start epoch {}'.format(epoch))
@@ -45,7 +46,9 @@ def train(data_loader, model, optimizer, scheduler, total_epochs,
         for batch_id, batch_data in enumerate(data_loader):
             # getting data batch
             batch_id_sp = epoch * batches_per_epoch
-            volumes, labels = batch_data
+            [volumes, labels] = batch_data
+            volumes = torch.tensor(volumes).to(device=device)
+            labels = torch.tensor(labels,dtype=torch.float64).to(device=device)
 
             if not sets.no_cuda: 
                 volumes = volumes.cuda()
