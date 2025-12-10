@@ -17,6 +17,12 @@ from pathlib import Path
 
 
 class ADNIDataset(Dataset):
+    class_to_distribution = {
+        'CN': [1,0,0],
+        'MCI': [0,1,0],
+        'AD': [0,0,1]
+    }
+
     def __init__(self, split_set, root_dir="./../adni/", train=False):
         super().__init__()
         if not os.path.exists(root_dir):
@@ -41,7 +47,8 @@ class ADNIDataset(Dataset):
         image_id = Path(image_path).stem()
         cond = [image_id in record for record in self.records]
         record = self.records[cond][0] # extract the record with the respective image id
-        label = record[2] # get the class from the record
+        cls = record[2] # get the class from the record
+        label = self.class_to_distribution(cls)
         return img, label
 
 
