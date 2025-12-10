@@ -11,17 +11,17 @@ def parse_opts():
         '--data_root',
         default='./adni',
         type=str,
-        help='Root directory path of data')
+        help='Root directory path of data - default: ./adni')
     parser.add_argument(
         '--img_list',
-        default='./data/train.txt',
+        default='./adni/train.txt',
         type=str,
         help='Path for image list file')
     parser.add_argument(
-        '--n_seg_classes',
-        default=2,
+        '--num_classes',
+        default=3,
         type=int,
-        help="Number of segmentation classes"
+        help="Number of classes"
     )
     parser.add_argument(
         '--learning_rate',  # set to 0.001 when finetune
@@ -50,17 +50,17 @@ def parse_opts():
         help='Number of total epochs to run')
     parser.add_argument(
         '--input_D',
-    default=56,
+        default=182,
         type=int,
         help='Input size of depth')
     parser.add_argument(
         '--input_H',
-        default=448,
+        default=218,
         type=int,
         help='Input size of height')
     parser.add_argument(
         '--input_W',
-        default=448,
+        default=182,
         type=int,
         help='Input size of width')
     parser.add_argument(
@@ -99,12 +99,12 @@ def parse_opts():
     )
     parser.add_argument(
         '--model',
-        default='resnet',
+        default='adclassifier',
         type=str,
-        help='(resnet | preresnet | wideresnet | resnext | densenet | adclassifier ')
+        help='(resnet | preresnet | wideresnet | resnext | densenet | adclassifier)')
     parser.add_argument(
         '--model_depth',
-        default=50,
+        default=10,
         type=int,
         help='Depth of resnet (10 | 18 | 34 | 50 | 101)')
     parser.add_argument(
