@@ -250,7 +250,24 @@ def resnet200(**kwargs):
     return model
 
 class ADClassification(nn.Module):
-    def __init__(self, scale=50, num_classes=3, *args, **kwargs):
+    scale_to_params = {
+        10: [BasicBlock, [1, 1, 1, 1]],
+        18: [BasicBlock, [2, 2, 2, 2]],
+        34: [BasicBlock, [3, 4, 6, 3]],
+        50: [Bottleneck, [3, 4, 6, 3]],
+        101: [Bottleneck, [3, 4, 23, 3]],
+        152: [Bottleneck, [3, 8, 36, 3]],
+        200: [Bottleneck, [3, 24, 36, 3]]
+    }
+
+    def __init__(self,
+                 scale,
+                 num_classes,
+                 sample_input_W,
+                 sample_input_H,
+                 sample_input_D,
+                 shortcut_type,
+                 no_cuda):
         """
         Constructor for the ADClassifictation task
 
@@ -262,31 +279,35 @@ class ADClassification(nn.Module):
         (either BasicBlock or Bottleneck) and the layers to be initialized
         within the Med3D backbone
         """
-        super().__init__(*args, **kwargs)
+        super().__init__()
         self.scale = scale
         self.num_classes = num_classes
 
         if self.scale not in [10,18,34,50,101,152,200]:
-            raise Exception("Your scale must be one of; [10, 18, 34, 50, 101, 152, 200]")
+            raise Exception(f"Your scale ({scale}) is not one of; [10, 18, 34, 50, 101, 152, 200]")
 
-        self.scale_to_params = {
-            10: [BasicBlock,[1, 1, 1, 1]],
-            18: [BasicBlock,[2, 2, 2, 2]],
-            34: [BasicBlock,[3, 4, 6, 3]],
-            50: [Bottleneck,[3, 4, 6, 3]],
-            101: [Bottleneck,[3, 4, 23, 3]],
-            152: [Bottleneck,[3, 8, 36, 3]],
-            200: [Bottleneck,[3, 24, 36, 3]]
-        }
+        [self.block, self.layers] = self.scale_to_params[scale] 
+        self.backbone = ResNet(self.block, self.layers, sample_input_D, sample_input_H,
+                               sample_input_W, num_classes, shortcut_type, no_cuda)
 
-        [self.block,self.layers] = self.scale_to_params[scale] 
-        self.backbone = ResNet(self.block, self.layers, **kwargs)
+        # taken from https://github.com/dongzhuoyao/3D-ResNets-PyTorch/blob/master/models/resnet.py
+        # last_depth = int(math.ceil(sample_input_D / 16))
+        # last_height = int(math.ceil(sample_input_H / 32))
+        # last_width = int(math.ceil(sample_input_W / 32))
+        # self.avgpool = nn.AvgPool3d(
+        #     (last_depth, last_height, last_width), stride=1)
+
+        # self.head = nn.Sequential(
+        #     nn.Linear(512 * self.block.expansion, self.num_classes)
+        # )
         self.head = nn.Sequential(
-            nn.Linear(512 * self.block.expansion, self.num_classes)
+            nn.LazyLinear(3)
         )
 
     def forward(self, x):
         x = self.backbone(x)
+        x = torch.flatten(x)
+        # x = self.avgpool(x)
+        # x = x.view(x.size(0), -1)
         x = self.head(x)
-
         return x
