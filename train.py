@@ -18,17 +18,18 @@ from scipy import ndimage
 import os
 from split_adni import split_dataset
 
-def train(data_loader, model, optimizer, scheduler, total_epochs, save_interval, save_folder, sets):
+def train(data_loader, model, optimizer, scheduler,
+          total_epochs, save_interval, save_folder, sets):
     # settings
     batches_per_epoch = len(data_loader)
     log.info('{} epochs in total, {} batches per epoch'.format(total_epochs, batches_per_epoch))
-    loss_seg = nn.CrossEntropyLoss(ignore_index=-1)
+    loss_fn = nn.CrossEntropyLoss(ignore_index=-1)
 
     print("Current setting is:")
     print(sets)
     print("\n\n")     
     if not sets.no_cuda:
-        loss_seg = loss_seg.cuda()
+        loss_fn = loss_fn.cuda()
         
     model.train()
     train_time_sp = time.time()
@@ -41,38 +42,22 @@ def train(data_loader, model, optimizer, scheduler, total_epochs, save_interval,
         for batch_id, batch_data in enumerate(data_loader):
             # getting data batch
             batch_id_sp = epoch * batches_per_epoch
-            volumes, label_masks = batch_data
+            volumes, labels = batch_data
 
             if not sets.no_cuda: 
                 volumes = volumes.cuda()
 
-            optimizer.zero_grad()
-            out_masks = model(volumes)
-            # resize label
-            [n, _, d, h, w] = out_masks.shape
-            new_label_masks = np.zeros([n, d, h, w])
-            for label_id in range(n):
-                label_mask = label_masks[label_id]
-                [ori_c, ori_d, ori_h, ori_w] = label_mask.shape 
-                label_mask = np.reshape(label_mask, [ori_d, ori_h, ori_w])
-                scale = [d*1.0/ori_d, h*1.0/ori_h, w*1.0/ori_w]
-                label_mask = ndimage.interpolation.zoom(label_mask, scale, order=0)
-                new_label_masks[label_id] = label_mask
-
-            new_label_masks = torch.tensor(new_label_masks).to(torch.int64)
-            if not sets.no_cuda:
-                new_label_masks = new_label_masks.cuda()
-
             # calculating loss
-            loss_value_seg = loss_seg(out_masks, new_label_masks)
-            loss = loss_value_seg
+            optimizer.zero_grad()
+            out_labels = model(volumes)
+            loss = loss_fn(out_labels, labels)
             loss.backward()                
             optimizer.step()
 
             avg_batch_time = (time.time() - train_time_sp) / (1 + batch_id_sp)
             log.info(
                     'Batch: {}-{} ({}), loss = {:.3f}, loss_seg = {:.3f}, avg_batch_time = {:.3f}'\
-                    .format(epoch, batch_id, batch_id_sp, loss.item(), loss_value_seg.item(), avg_batch_time))
+                    .format(epoch, batch_id, batch_id_sp, loss.item(), avg_batch_time))
           
             if not sets.ci_test:
                 # save model
@@ -91,9 +76,7 @@ def train(data_loader, model, optimizer, scheduler, total_epochs, save_interval,
                                 'optimizer': optimizer.state_dict()},
                                 model_save_path)
                             
-    print('Finished training')            
-    if sets.ci_test:
-        exit()
+    print('Finished training')
 
 
 def load_train_test_set(sets):
@@ -173,4 +156,5 @@ if __name__ == '__main__':
     breakpoint()
 
     # training
-    train(train_loader, model, optimizer, scheduler, total_epochs=sets.n_epochs, save_interval=sets.save_intervals, save_folder=sets.save_folder, sets=sets) 
+    train(train_loader, model, optimizer, scheduler, total_epochs=sets.n_epochs,
+           save_interval=sets.save_intervals, save_folder=sets.save_folder, sets=sets) 
