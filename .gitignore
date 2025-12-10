@@ -131,8 +131,7 @@ trails/**/*.pth
 # dataset
 MedicalNet_pytorch_files2.zip
 trails/
-adni/images/*.nii
-adni/images/*.nii.gz
+adni/
 
 
 # vscode
