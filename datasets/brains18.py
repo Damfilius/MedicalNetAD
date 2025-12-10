@@ -23,23 +23,26 @@ class ADNIDataset(Dataset):
             raise Exception("Your root directory does not exist...")
 
         self.img_names = split_set
-        self.img_paths = [os.path.join(root_dir,name) for name in self.img_names]
-        self.label_file = os.path.join(root_dir,"labels.csv")
+        self.img_paths = [os.path.join(root_dir, name) for name in self.img_names]
+        self.label_file = os.path.join(root_dir, "labels.csv")
         self.records = pd.read_csv(self.label_file).to_numpy()
 
     def __len__(self):
         return len(self.img_names)
 
     def __getitem__(self, index):
+        # load the image
         image_path = self.img_paths[index]
         img = nibabel.load(image_path)
+        if not self.train:
+            return img
+
+        # for training you also have to return the label
         image_id = Path(image_path).stem()
         cond = [image_id in record for record in self.records]
-        label = self.records[cond][0]
-
-        return img,label
-
-
+        record = self.records[cond][0] # extract the record with the respective image id
+        label = record[2] # get the class from the record
+        return img, label
 
 
 class BrainS18Dataset(Dataset):
