@@ -17,9 +17,12 @@ from utils.logger import log
 from scipy import ndimage
 import os
 from split_adni import split_dataset
+import wandb
 
-def train(data_loader, model, optimizer, scheduler,
-          total_epochs, save_interval, save_folder, sets):
+os.environ['WANDB_API_KEY'] = '###################################'
+
+def train(data_loader, model, optimizer, scheduler, total_epochs,
+          save_interval, save_folder, sets):
     # settings
     batches_per_epoch = len(data_loader)
     log.info('{} epochs in total, {} batches per epoch'.format(total_epochs, batches_per_epoch))
@@ -55,9 +58,10 @@ def train(data_loader, model, optimizer, scheduler,
             optimizer.step()
 
             avg_batch_time = (time.time() - train_time_sp) / (1 + batch_id_sp)
-            log.info(
-                    'Batch: {}-{} ({}), loss = {:.3f}, loss_seg = {:.3f}, avg_batch_time = {:.3f}'\
-                    .format(epoch, batch_id, batch_id_sp, loss.item(), avg_batch_time))
+            wandb.log({"train": {"batch": f"{epoch}-{batch_id} ({batch_id_sp})", "loss": loss.item(), "avg_batch_time": avg_batch_time}})
+            # log.info(
+            #         'Batch: {}-{} ({}), loss = {:.3f}, loss_seg = {:.3f}, avg_batch_time = {:.3f}'\
+            #         .format(epoch, batch_id, batch_id_sp, loss.item(), avg_batch_time))
           
             if not sets.ci_test:
                 # save model
@@ -68,7 +72,8 @@ def train(data_loader, model, optimizer, scheduler,
                     if not os.path.exists(model_save_dir):
                         os.makedirs(model_save_dir)
                     
-                    log.info('Save checkpoints: epoch = {}, batch_id = {}'.format(epoch, batch_id)) 
+                    # log.info('Save checkpoints: epoch = {}, batch_id = {}'.format(epoch, batch_id)) 
+                    wandb.log('Save checkpoints: epoch = {}, batch_id = {}'.format(epoch, batch_id))
                     torch.save({
                                 'ecpoch': epoch,
                                 'batch_id': batch_id,
@@ -77,7 +82,6 @@ def train(data_loader, model, optimizer, scheduler,
                                 model_save_path)
                             
     print('Finished training')
-
 
 def load_train_test_set(sets):
     # prepare the file names of the train and test sets
@@ -153,7 +157,19 @@ if __name__ == '__main__':
     # training_dataset = BrainS18Dataset(sets.data_root, sets.img_list, sets)
     train_loader = DataLoader(training_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
     test_loader = DataLoader(testing_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
-    breakpoint()
+
+    # setup the logger
+    wandb.init(
+        entity="dakifile03-vrije-universiteit-brussel",
+        project="AD Classification",
+        config={
+            "learning_rate": sets.learning_rate,
+            "architecture": sets.model,
+            "dataset": "ADNI",
+            "epochs": sets.n_epochs,
+        },
+    )
+    wandb.config.update(sets) # config is a variable that holds and saves hyper parameters and inputs
 
     # training
     train(train_loader, model, optimizer, scheduler, total_epochs=sets.n_epochs,
