@@ -19,6 +19,7 @@ import os
 from split_adni import split_dataset
 import wandb
 from tqdm import tqdm
+from dataset_utils import AverageMeter, calculate_accuracy
 # import test
 
 os.environ['WANDB_API_KEY'] = 'db49d0a2802122e03ce8fc7cb3d36a8206ba8c76'
@@ -66,50 +67,90 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
     print(sets)
     print("\n\n")
         
-    train_time_sp = time.time()
     for epoch in range(total_epochs):
         log.info('Start epoch {}'.format(epoch))
 
         scheduler.step()
+        batch_time = AverageMeter()
+        data_time = AverageMeter()
+        losses = AverageMeter()
+        accuracies = AverageMeter()
         
         train_loop = tqdm(data_loader)
+        train_time = time.time()
         for batch_id, batch_data in enumerate(train_loop):
+            data_time.update(time.time() - train_time)
+
             # getting data batch
             batch_id_sp = epoch * batches_per_epoch
             [volumes, labels] = batch_data
             volumes = torch.tensor(volumes,dtype=torch.float32).to(device)
             labels = torch.tensor(labels).to(device)
 
-            # calculating loss
-            optimizer.zero_grad()
+            # calculating loss and accuracy
             out_labels = model(volumes)
             loss = loss_fn(out_labels, labels)
+            acc = calculate_accuracy(out_labels, labels)
+
+            # update the average meter
+            losses.update(loss.item(), volumes.size(0))
+            accuracies.update(acc, volumes.size(0))
+
+            # update the weights
+            optimizer.zero_grad()
             loss.backward()                
             optimizer.step()
 
-            avg_batch_time = (time.time() - train_time_sp) / (1 + batch_id_sp)
-            wandb.log({"train": {"batch": f"{epoch}-{batch_id} ({batch_id_sp})", "loss": loss.item(), "avg_batch_time": avg_batch_time, "lr": scheduler.get_lr()}})
-            # log.info(
-            #         'Batch: {}-{} ({}), loss = {:.3f}, loss_seg = {:.3f}, avg_batch_time = {:.3f}'\
-            #         .format(epoch, batch_id, batch_id_sp, loss.item(), avg_batch_time))
+            # log the data
+            wandb.log({'train_batch': {
+                    'epoch': epoch,
+                    'batch': batch_id,
+                    'iter': (epoch - 1) * len(data_loader) + (batch_id + 1),
+                    'loss': losses.val,
+                    'acc': accuracies.val,
+                    'lr': optimizer.param_groups[0]['lr']}})
+
+            # update the average time
+            batch_time.update(time.time() - train_time)
+            train_time = time.time()
+
+            # log to terminal
+            print(
+                'Epoch: [{0}][{1}/{2}]\t'
+                'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                'Acc {acc.val:.3f} ({acc.avg:.3f})'.format(
+                  epoch,
+                  batch_id + 1,
+                  len(data_loader),
+                  batch_time=batch_time,
+                  data_time=data_time,
+                  loss=losses,
+                  acc=accuracies))
           
-            if not sets.ci_test:
-                # save model
-                if batch_id == 0 and batch_id_sp != 0 and batch_id_sp % save_interval == 0:
-                #if batch_id_sp != 0 and batch_id_sp % save_interval == 0:
-                    model_save_path = '{}_epoch_{}_batch_{}.pth.tar'.format(save_folder, epoch, batch_id)
-                    model_save_dir = os.path.dirname(model_save_path)
-                    if not os.path.exists(model_save_dir):
-                        os.makedirs(model_save_dir)
-                    
-                    # log.info('Save checkpoints: epoch = {}, batch_id = {}'.format(epoch, batch_id)) 
-                    wandb.log({"checkpoint": {"epoch": epoch, "batch_id": batch_id}})
-                    torch.save({
-                                'ecpoch': epoch,
-                                'batch_id': batch_id,
-                                'state_dict': model.state_dict(),
-                                'optimizer': optimizer.state_dict()},
-                                model_save_path)
+        # log train results after an epoch
+        wandb.log({'train_epoch': {
+                'epoch': epoch,
+                'loss': losses.avg,
+                'acc': accuracies.avg,
+                'lr': optimizer.param_groups[0]['lr']}})
+
+        # save model
+        if epoch % save_interval == 0:
+            model_save_path = '{}_epoch_{}_batch_{}.pth.tar'.format(save_folder, epoch, batch_id)
+            model_save_dir = os.path.dirname(model_save_path)
+            if not os.path.exists(model_save_dir):
+                os.makedirs(model_save_dir)
+            
+            # log.info('Save checkpoints: epoch = {}, batch_id = {}'.format(epoch, batch_id)) 
+            wandb.log({"checkpoint": {"epoch": epoch}})
+            torch.save({
+                        'ecpoch': epoch,
+                        'batch_id': batch_id,
+                        'state_dict': model.state_dict(),
+                        'optimizer': optimizer.state_dict()},
+                        model_save_path)
 
         # if epoch % 20 == 0:
         #     val_loss = test
