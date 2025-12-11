@@ -291,11 +291,11 @@ class ADClassification(nn.Module):
                                sample_input_W, num_classes, shortcut_type, no_cuda)
 
         # taken from https://github.com/dongzhuoyao/3D-ResNets-PyTorch/blob/master/models/resnet.py
-        # last_depth = int(math.ceil(sample_input_D / 16))
-        # last_height = int(math.ceil(sample_input_H / 32))
-        # last_width = int(math.ceil(sample_input_W / 32))
-        # self.avgpool = nn.AvgPool3d(
-        #     (last_depth, last_height, last_width), stride=1)
+        last_depth = int(math.ceil(sample_input_D / 16))
+        last_height = int(math.ceil(sample_input_H / 32))
+        last_width = int(math.ceil(sample_input_W / 32))
+        self.avgpool = nn.AvgPool3d(
+            (last_depth, last_height, last_width), stride=1)
 
         # self.head = nn.Sequential(
         #     nn.Linear(512 * self.block.expansion, self.num_classes)
@@ -306,8 +306,8 @@ class ADClassification(nn.Module):
 
     def forward(self, x):
         x = self.backbone(x)
-        x = torch.flatten(x)
-        # x = self.avgpool(x)
-        # x = x.view(x.size(0), -1)
+        # x = torch.flatten(x)
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
         x = self.head(x)
         return x
