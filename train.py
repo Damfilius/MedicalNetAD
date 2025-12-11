@@ -18,40 +18,53 @@ from scipy import ndimage
 import os
 from split_adni import split_dataset
 import wandb
-from tqdm import tqdm
 from dataset_utils import AverageMeter, calculate_accuracy
+# import tqdm as tqdm
 # import test
 
-os.environ['WANDB_API_KEY'] = 'db49d0a2802122e03ce8fc7cb3d36a8206ba8c76'
+os.environ['WANDB_API_KEY'] = '#########################################'
 
-# def test(data_loader, model, img_names, sets):
-#     model.eval() # for testing 
-#     device = next(model.paramters()).device
+def test(data_loader, model, loss_fn):
+    model.eval() # for testing 
+    device = next(model.paramters()).device
 
-#     labels = []
-#     test_loop = tqdm(data_loader)
-#     # disable gradient calculation
-#     with torch.no_grad():
-#         for batch_id, batch_data in enumerate(test_loop):
-#             # forward
-#             [volumes, labels] = batch_data
-#             volumes = [volume.to(device) for volume in batch_data]
-#             labels = [label.to(device) for label in labels]
-#             probs = model(volumes)
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
+    losses = AverageMeter()
+    accuracies = AverageMeter()
 
-#             # resize mask to original size
-#             [batchsize, _, mask_d, mask_h, mask_w] = probs.shape
-#             data = nib.load(os.path.join(sets.data_root, img_names[batch_id]))
-#             data = data.get_data()
-#             [depth, height, width] = data.shape
-#             mask = probs[0]
-#             scale = [1, depth*1.0/mask_d, height*1.0/mask_h, width*1.0/mask_w]
-#             mask = ndimage.interpolation.zoom(mask, scale, order=1)
-#             mask = np.argmax(mask, axis=0)
-            
-#             masks.append(mask)
- 
-#     return masks
+    # disable gradient calculation
+    with torch.no_grad():
+        # test_loop = tqdm(data_loader)
+        # end_time = time.time()
+        for batch_id, batch_data in enumerate(data_loader):
+            # update the time
+            data_time.update(time.time() - end_time)
+
+            # forward
+            [volumes, labels] = batch_data
+            volumes = torch.tensor(volumes,dtype=torch.float32).to(device)
+            labels = torch.tensor(labels).to(device)
+            probs = model(volumes)
+
+            # calculate the loss and the accuracy
+            out_labels = model(volumes)
+            loss = loss_fn(out_labels, labels)
+            acc = calculate_accuracy(out_labels, labels)
+
+            # update the average meters
+            losses.update(loss.item(), volumes.size(0))
+            accuracies.update(acc, volumes.size(0))
+            batch_time.update(time.time() - end_time)
+            end_time = time.time()
+
+        # log the results
+        wandb.log({'test': {
+                'loss': losses.avg,
+                'acc': accuracies.avg,
+                'lr': optimizer.param_groups[0]['lr'],
+                'avg_batch_time': batch_time.avg,
+                'test_time': data_time.val}})
 
 def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
           save_interval, save_folder, sets):
@@ -76,9 +89,9 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
         losses = AverageMeter()
         accuracies = AverageMeter()
         
-        train_loop = tqdm(data_loader)
+        # train_loop = tqdm(data_loader)
         train_time = time.time()
-        for batch_id, batch_data in enumerate(train_loop):
+        for batch_id, batch_data in enumerate(data_loader):
             data_time.update(time.time() - train_time)
 
             # getting data batch
@@ -136,6 +149,10 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
                 'acc': accuracies.avg,
                 'lr': optimizer.param_groups[0]['lr']}})
 
+        # run test every 20 epochs
+        if epoch % 20 == 0:
+            test(test_loader, model, loss_fn)
+
         # save model
         if epoch % save_interval == 0:
             model_save_path = '{}_epoch_{}_batch_{}.pth.tar'.format(save_folder, epoch, batch_id)
@@ -151,9 +168,6 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
                         'state_dict': model.state_dict(),
                         'optimizer': optimizer.state_dict()},
                         model_save_path)
-
-        # if epoch % 20 == 0:
-        #     val_loss = test
                             
     print('Finished training')
 
