@@ -18,40 +18,67 @@ from scipy import ndimage
 import os
 from split_adni import split_dataset
 import wandb
+from tqdm import tqdm
+# import test
 
-os.environ['WANDB_API_KEY'] = '################################'
+os.environ['WANDB_API_KEY'] = 'db49d0a2802122e03ce8fc7cb3d36a8206ba8c76'
 
-def train(data_loader, model, optimizer, scheduler, total_epochs,
+# def test(data_loader, model, img_names, sets):
+#     model.eval() # for testing 
+#     device = next(model.paramters()).device
+
+#     labels = []
+#     test_loop = tqdm(data_loader)
+#     # disable gradient calculation
+#     with torch.no_grad():
+#         for batch_id, batch_data in enumerate(test_loop):
+#             # forward
+#             [volumes, labels] = batch_data
+#             volumes = [volume.to(device) for volume in batch_data]
+#             labels = [label.to(device) for label in labels]
+#             probs = model(volumes)
+
+#             # resize mask to original size
+#             [batchsize, _, mask_d, mask_h, mask_w] = probs.shape
+#             data = nib.load(os.path.join(sets.data_root, img_names[batch_id]))
+#             data = data.get_data()
+#             [depth, height, width] = data.shape
+#             mask = probs[0]
+#             scale = [1, depth*1.0/mask_d, height*1.0/mask_h, width*1.0/mask_w]
+#             mask = ndimage.interpolation.zoom(mask, scale, order=1)
+#             mask = np.argmax(mask, axis=0)
+            
+#             masks.append(mask)
+ 
+#     return masks
+
+def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
           save_interval, save_folder, sets):
     # settings
-    batches_per_epoch = len(data_loader)
-    log.info('{} epochs in total, {} batches per epoch'.format(total_epochs, batches_per_epoch))
-    loss_fn = nn.CrossEntropyLoss(ignore_index=-1)
-
-    print("Current setting is:")
-    print(sets)
-    print("\n\n")     
-    if not sets.no_cuda:
-        loss_fn = loss_fn.cuda()
-        
     model.train()
     device = next(model.parameters()).device
+    loss_fn = nn.CrossEntropyLoss(ignore_index=-1)
+    loss_fn = loss_fn.to(device)
+
+    batches_per_epoch = len(data_loader)
+    log.info('{} epochs in total, {} batches per epoch'.format(total_epochs, batches_per_epoch))
+    print("Current setting is:")
+    print(sets)
+    print("\n\n")
+        
     train_time_sp = time.time()
     for epoch in range(total_epochs):
         log.info('Start epoch {}'.format(epoch))
-        
+
         scheduler.step()
-        log.info('lr = {}'.format(scheduler.get_lr()))
         
-        for batch_id, batch_data in enumerate(data_loader):
+        train_loop = tqdm(data_loader)
+        for batch_id, batch_data in enumerate(train_loop):
             # getting data batch
             batch_id_sp = epoch * batches_per_epoch
             [volumes, labels] = batch_data
-            volumes = torch.tensor(volumes).to(device=device)
-            labels = torch.tensor(labels,dtype=torch.float64).to(device=device)
-
-            if not sets.no_cuda: 
-                volumes = volumes.cuda()
+            volumes = torch.tensor(volumes,dtype=torch.float32).to(device)
+            labels = torch.tensor(labels).to(device)
 
             # calculating loss
             optimizer.zero_grad()
@@ -61,7 +88,7 @@ def train(data_loader, model, optimizer, scheduler, total_epochs,
             optimizer.step()
 
             avg_batch_time = (time.time() - train_time_sp) / (1 + batch_id_sp)
-            wandb.log({"train": {"batch": f"{epoch}-{batch_id} ({batch_id_sp})", "loss": loss.item(), "avg_batch_time": avg_batch_time}})
+            wandb.log({"train": {"batch": f"{epoch}-{batch_id} ({batch_id_sp})", "loss": loss.item(), "avg_batch_time": avg_batch_time, "lr": scheduler.get_lr()}})
             # log.info(
             #         'Batch: {}-{} ({}), loss = {:.3f}, loss_seg = {:.3f}, avg_batch_time = {:.3f}'\
             #         .format(epoch, batch_id, batch_id_sp, loss.item(), avg_batch_time))
@@ -76,13 +103,16 @@ def train(data_loader, model, optimizer, scheduler, total_epochs,
                         os.makedirs(model_save_dir)
                     
                     # log.info('Save checkpoints: epoch = {}, batch_id = {}'.format(epoch, batch_id)) 
-                    wandb.log('Save checkpoints: epoch = {}, batch_id = {}'.format(epoch, batch_id))
+                    wandb.log({"checkpoint": {"epoch": epoch, "batch_id": batch_id}})
                     torch.save({
                                 'ecpoch': epoch,
                                 'batch_id': batch_id,
                                 'state_dict': model.state_dict(),
                                 'optimizer': optimizer.state_dict()},
                                 model_save_path)
+
+        # if epoch % 20 == 0:
+        #     val_loss = test
                             
     print('Finished training')
 
@@ -132,8 +162,8 @@ if __name__ == '__main__':
                 { 'params': parameters['base_parameters'], 'lr': sets.learning_rate }, 
                 { 'params': parameters['new_parameters'], 'lr': sets.learning_rate*100 }
                 ]
-    optimizer = torch.optim.SGD(params, momentum=0.9, weight_decay=1e-3)   
-    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.99)
+    optimizer = torch.optim.Adam(params, lr=sets.learning_rate)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [40,80,120,160], gamma=0.5)
     
     # train from resume
     if sets.resume_path:
@@ -165,6 +195,7 @@ if __name__ == '__main__':
     wandb.init(
         entity="dakifile03-vrije-universiteit-brussel",
         project="AD Classification",
+        name=f"{sets.model}_{time.time()}",
         config={
             "learning_rate": sets.learning_rate,
             "architecture": sets.model,
@@ -175,5 +206,5 @@ if __name__ == '__main__':
     wandb.config.update(sets) # config is a variable that holds and saves hyper parameters and inputs
 
     # training
-    train(train_loader, model, optimizer, scheduler, total_epochs=sets.n_epochs,
+    train(train_loader, test_loader, model, optimizer, scheduler, total_epochs=sets.n_epochs,
            save_interval=sets.save_intervals, save_folder=sets.save_folder, sets=sets) 
