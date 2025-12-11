@@ -18,9 +18,9 @@ from pathlib import Path
 
 class ADNIDataset(Dataset):
     class_to_distribution = {
-        'CN': [1,0,0],
-        'MCI': [0,1,0],
-        'AD': [0,0,1]
+        'CN': 0,
+        'MCI': 1,
+        'AD': 2
     }
 
     def __init__(self, split_set, root_dir="./../adni/", train=False):
@@ -50,11 +50,8 @@ class ADNIDataset(Dataset):
         image_path = self.img_paths[index]
         nii_img = nibabel.load(image_path)
         img = self.__nii2tensorarray__(nii_img)
-        []
-        if not self.train:
-            return img
 
-        # for training you also have to return the label
+        # you also have to return the label
         image_id = Path(image_path).stem
         cond = [image_id in record for record in self.records]
         record = self.records[cond][0] # extract the record with the respective image id
