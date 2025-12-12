@@ -141,9 +141,9 @@ class ResNet(nn.Module):
         self.layer2 = self._make_layer(
             block, 128, layers[1], shortcut_type, stride=2)
         self.layer3 = self._make_layer(
-            block, 256, layers[2], shortcut_type, stride=1, dilation=2)
+            block, 256, layers[2], shortcut_type, stride=2)
         self.layer4 = self._make_layer(
-            block, 512, layers[3], shortcut_type, stride=1, dilation=4)
+            block, 512, layers[3], shortcut_type, stride=2)
 
         # Code for segmentation
         # self.conv_seg = nn.Sequential(
@@ -291,7 +291,7 @@ class ADClassification(nn.Module):
                                sample_input_W, num_classes, shortcut_type, no_cuda)
 
         # taken from https://github.com/dongzhuoyao/3D-ResNets-PyTorch/blob/master/models/resnet.py
-        last_depth = int(math.ceil(sample_input_D / 16))
+        last_depth = int(math.ceil(sample_input_D / 32))
         last_height = int(math.ceil(sample_input_H / 32))
         last_width = int(math.ceil(sample_input_W / 32))
         self.avgpool = nn.AvgPool3d(
@@ -300,14 +300,20 @@ class ADClassification(nn.Module):
         # self.head = nn.Sequential(
         #     nn.Linear(512 * self.block.expansion, self.num_classes)
         # )
-        self.head = nn.Sequential(
-            nn.LazyLinear(3)
-        )
+        # self.head = nn.Sequential(
+        #     # nn.LazyLinear(512),
+        #     # nn.ReLU(),
+        #     nn.LazyLinear(3),
+        #     nn.Softmax()
+        # )
+        self.fc = nn.Linear(512*self.block.expansion, 3)
+        self.sm = nn.Softmax()
 
     def forward(self, x):
         x = self.backbone(x)
-        # x = torch.flatten(x)
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
-        x = self.head(x)
+        x = self.fc(x)
+        x = self.sm(x)
+        
         return x
