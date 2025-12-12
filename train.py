@@ -22,30 +22,28 @@ from dataset_utils import AverageMeter, calculate_accuracy
 # import tqdm as tqdm
 # import test
 
-os.environ['WANDB_API_KEY'] = '#########################################'
+os.environ['WANDB_API_KEY'] = '3dcea36a6508b37c26d8c73c01243a435a165578'
 
 def test(data_loader, model, loss_fn):
     model.eval() # for testing 
-    device = next(model.paramters()).device
+    device = next(model.parameters()).device
 
     batch_time = AverageMeter()
-    data_time = AverageMeter()
     losses = AverageMeter()
     accuracies = AverageMeter()
 
     # disable gradient calculation
     with torch.no_grad():
         # test_loop = tqdm(data_loader)
-        # end_time = time.time()
+        test_start_time = time.time()
         for batch_id, batch_data in enumerate(data_loader):
             # update the time
-            data_time.update(time.time() - end_time)
+            batch_start_time = time.time()
 
             # forward
             [volumes, labels] = batch_data
             volumes = torch.tensor(volumes,dtype=torch.float32).to(device)
             labels = torch.tensor(labels).to(device)
-            probs = model(volumes)
 
             # calculate the loss and the accuracy
             out_labels = model(volumes)
@@ -55,23 +53,22 @@ def test(data_loader, model, loss_fn):
             # update the average meters
             losses.update(loss.item(), volumes.size(0))
             accuracies.update(acc, volumes.size(0))
-            batch_time.update(time.time() - end_time)
-            end_time = time.time()
+            batch_time.update(time.time() - batch_start_time)
 
         # log the results
+        total_test_time = time.time() - test_start_time
         wandb.log({'test': {
                 'loss': losses.avg,
                 'acc': accuracies.avg,
-                'lr': optimizer.param_groups[0]['lr'],
                 'avg_batch_time': batch_time.avg,
-                'test_time': data_time.val}})
+                'test_time': total_test_time}})
 
 def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
           save_interval, save_folder, sets):
     # settings
     model.train()
     device = next(model.parameters()).device
-    loss_fn = nn.CrossEntropyLoss(ignore_index=-1)
+    loss_fn = nn.CrossEntropyLoss()
     loss_fn = loss_fn.to(device)
 
     batches_per_epoch = len(data_loader)
@@ -90,18 +87,18 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
         accuracies = AverageMeter()
         
         # train_loop = tqdm(data_loader)
-        train_time = time.time()
+        epoch_start_time = time.time()
         for batch_id, batch_data in enumerate(data_loader):
-            data_time.update(time.time() - train_time)
+            batch_start_time = time.time()
 
             # getting data batch
-            batch_id_sp = epoch * batches_per_epoch
             [volumes, labels] = batch_data
             volumes = torch.tensor(volumes,dtype=torch.float32).to(device)
             labels = torch.tensor(labels).to(device)
 
             # calculating loss and accuracy
             out_labels = model(volumes)
+            print(f"Target: {labels} - Prediction: {out_labels}")
             loss = loss_fn(out_labels, labels)
             acc = calculate_accuracy(out_labels, labels)
 
@@ -116,16 +113,11 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
 
             # log the data
             wandb.log({'train_batch': {
-                    'epoch': epoch,
-                    'batch': batch_id,
-                    'iter': (epoch - 1) * len(data_loader) + (batch_id + 1),
                     'loss': losses.val,
-                    'acc': accuracies.val,
-                    'lr': optimizer.param_groups[0]['lr']}})
+                    'acc': accuracies.val}})
 
             # update the average time
-            batch_time.update(time.time() - train_time)
-            train_time = time.time()
+            batch_time.update(time.time() - batch_start_time)
 
             # log to terminal
             print(
@@ -143,14 +135,16 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
                   acc=accuracies))
           
         # log train results after an epoch
+        total_epoch_time = time.time() - epoch_start_time
         wandb.log({'train_epoch': {
-                'epoch': epoch,
                 'loss': losses.avg,
                 'acc': accuracies.avg,
+                'epoch_time': total_epoch_time,
+                'avg_batch_time': batch_time.avg,
                 'lr': optimizer.param_groups[0]['lr']}})
 
         # run test every 20 epochs
-        if epoch % 20 == 0:
+        if epoch % 10 == 0:
             test(test_loader, model, loss_fn)
 
         # save model
@@ -217,8 +211,8 @@ if __name__ == '__main__':
                 { 'params': parameters['base_parameters'], 'lr': sets.learning_rate }, 
                 { 'params': parameters['new_parameters'], 'lr': sets.learning_rate*100 }
                 ]
-    optimizer = torch.optim.Adam(params, lr=sets.learning_rate)
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [40,80,120,160], gamma=0.5)
+    optimizer = torch.optim.Adam(parameters['new_parameters'], lr=sets.learning_rate)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [10,20,30,40], gamma=0.5)
     
     # train from resume
     if sets.resume_path:
