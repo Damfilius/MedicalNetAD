@@ -97,7 +97,7 @@ def generate_model(opt):
                 pretrain = torch.load(
                     opt.pretrain_path,
                     weights_only=True,
-                    map_location='cpu'  
+                    map_location=f'cuda:{opt.gpu_id[0]}'  
                 )
         
         except FileNotFoundError:
@@ -114,8 +114,15 @@ def generate_model(opt):
         except Exception as e:
             raise Exception(f"An unknown error occurred while loading the model.：{e}") from e
         
-        
-        pretrain_dict = {k: v for k, v in pretrain['state_dict'].items() if k in net_dict.keys()}
+        pretrain_dict = {}  
+        if opt.model == 'resnet':
+            pretrain_dict = {k: v for k, v in pretrain['state_dict'].items() if k in net_dict.keys()}
+        elif opt.model == 'adclassifier':
+            for k, v in pretrain['state_dict'].items():
+                if "module." in k:
+                    k = k.removeprefix("module.")
+                if k in net_dict.keys():
+                    pretrain_dict[k] = v
          
         net_dict.update(pretrain_dict)
         if opt.model == 'resnet':
