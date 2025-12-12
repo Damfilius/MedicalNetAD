@@ -45,7 +45,7 @@ def parse_opts():
         help='Interation for saving model')
     parser.add_argument(
         '--n_epochs',
-        default=200,
+        default=50,
         type=int,
         help='Number of total epochs to run')
     parser.add_argument(
@@ -72,7 +72,7 @@ def parse_opts():
     )
     parser.add_argument(
         '--pretrain_path',
-        default='pretrain/resnet_50.pth',
+        default='pretrain/resnet_10.pth',
         type=str,
         help=
         'Path for pretrained model.'
@@ -80,7 +80,7 @@ def parse_opts():
     parser.add_argument(
         '--new_layer_names',
         #default=['upsample1', 'cmp_layer3', 'upsample2', 'cmp_layer2', 'upsample3', 'cmp_layer1', 'upsample4', 'cmp_conv1', 'conv_seg'],
-        default=['Linear'],
+        default=['Linear','linear'],
         type=list,
         help='New layer except for backbone')
     parser.add_argument(
