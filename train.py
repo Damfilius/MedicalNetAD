@@ -233,7 +233,7 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(model.parameters(), lr=sets.learning_rate)
     adjustment_points = get_adjustment_points(sets.n_epochs, sets.lr_adjustment_count)
     print(f"Adjusting intervals at {adjustment_points} epochs")
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, adjustment_points, gamma=0.5)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, adjustment_points, gamma=0.1)
     
     # train from resume
     if sets.resume_path:
