@@ -194,8 +194,10 @@ def load_train_test_set(sets):
 def get_adjustment_points(n_epochs, lr_adjustment_count):
     adjustment_interval = math.ceil(n_epochs / lr_adjustment_count+1)
     adjustment_points = []
-    for i in range(adjustment_interval):
-        adjustment_points.append(i * adjustment_interval)
+    count = 0
+    while(count <= n_epochs):
+        adjustment_points.append(count)
+        count += adjustment_interval
 
     return adjustment_points
 
