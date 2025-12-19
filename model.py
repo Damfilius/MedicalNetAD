@@ -139,9 +139,18 @@ def generate_model(opt):
 
         new_parameters_id = list(map(id, new_parameters))
         base_parameters = list(filter(lambda p: id(p) not in new_parameters_id, model.parameters()))
-        parameters = {'base_parameters': base_parameters, 
-                      'new_parameters': new_parameters}
+        # parameters = {'base_parameters': base_parameters, 
+        #               'new_parameters': new_parameters}
 
-        return model, parameters
+        return model, model.parameters()
 
     return model, model.parameters()
+
+def generate_ad_model(opt, device):
+    model = resnet.ADClassification(scale=opt.model_depth, num_classes=opt.num_classes,
+                                    sample_input_W=opt.input_W, sample_input_H=opt.input_H,
+                                    sample_input_D=opt.input_D, shortcut_type=opt.resnet_shortcut,
+                                    no_cuda=opt.no_cuda)
+
+    # initializing the weights and biases
+    return model.to(device)
