@@ -94,8 +94,14 @@ def parse_opts():
     parser.add_argument(
         "--split_ratio",
         default=[0.8,0.1,0.1],
-        type=float,
+        type=list,
         help="Ratio of the total dataset that will be the training set."
+    )
+    parser.add_argument(
+        "--logging_file",
+        default="./log.txt",
+        type=str,
+        help="Name of file for logging output of training."
     )
     parser.add_argument(
         '--model',

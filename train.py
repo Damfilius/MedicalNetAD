@@ -21,6 +21,9 @@ import wandb
 from dataset_utils import AverageMeter, calculate_accuracy
 import math
 from model import generate_ad_model
+from tqdm import tqdm
+import pandas as pd
+import os
 # import test
 
 os.environ['WANDB_API_KEY'] = ''
@@ -37,14 +40,14 @@ def test(data_loader, model, loss_fn):
     with torch.no_grad():
         # test_loop = tqdm(data_loader)
         test_start_time = time.time()
-        for batch_id, batch_data in enumerate(data_loader):
+        for batch_id, batch_data in enumerate(tqdm(data_loader)):
             # update the time
             batch_start_time = time.time()
 
             # forward
             [volumes, labels] = batch_data
-            volumes = torch.tensor(volumes,dtype=torch.float32).to(device)
-            labels = torch.tensor(labels).to(device)
+            volumes = volumes.to(device)
+            labels = labels.to(device)
 
             # calculate the loss and the accuracy
             out_labels = model(volumes)
@@ -65,11 +68,11 @@ def test(data_loader, model, loss_fn):
                 'test_time': total_test_time}})
 
 def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
-          save_interval, save_folder, sets):
+          save_interval, save_folder, logging_file, train_loss_weights, sets):
     # settings
     model.train()
     device = next(model.parameters()).device
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.CrossEntropyLoss(weight=torch.tensor(train_loss_weights))
     loss_fn = loss_fn.to(device)
 
     batches_per_epoch = len(data_loader)
@@ -77,11 +80,13 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
     print("Current setting is:")
     print(sets)
     print("\n\n")
+
+    # "file pointer" to the logging file
+    fp = open(logging_file, "w")
         
     for epoch in range(total_epochs):
-        log.info('Start epoch {}'.format(epoch))
+        fp.write('Start epoch {}\n'.format(epoch))
 
-        scheduler.step()
         batch_time = AverageMeter()
         data_time = AverageMeter()
         losses = AverageMeter()
@@ -89,19 +94,20 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
         
         # train_loop = tqdm(data_loader)
         epoch_start_time = time.time()
-        for batch_id, batch_data in enumerate(data_loader):
+        for batch_id, batch_data in enumerate((data_loader)):
             batch_start_time = time.time()
 
             # getting data batch
             [volumes, labels] = batch_data
-            volumes = torch.tensor(volumes,dtype=torch.float32).to(device)
-            labels = torch.tensor(labels).to(device)
+            volumes = volumes.to(device)
+            labels = labels.to(device)
 
             # calculating loss and accuracy
             out_labels = model(volumes)
-            print(f"Target: {labels} - Prediction: {out_labels}")
             loss = loss_fn(out_labels, labels)
             acc = calculate_accuracy(out_labels, labels)
+
+            print(f"Target: {labels}\nLabels: {out_labels}\n")
 
             # update the average meter
             losses.update(loss.item(), volumes.size(0))
@@ -120,13 +126,13 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
             # update the average time
             batch_time.update(time.time() - batch_start_time)
 
-            # log to terminal
-            print(
+            # log to file
+            fp.write(
                 'Epoch: [{0}][{1}/{2}]\t'
                 'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                 'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                 'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                'Acc {acc.val:.3f} ({acc.avg:.3f})'.format(
+                'Acc {acc.val:.3f} ({acc.avg:.3f})\n'.format(
                   epoch,
                   batch_id + 1,
                   len(data_loader),
@@ -134,7 +140,10 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
                   data_time=data_time,
                   loss=losses,
                   acc=accuracies))
-          
+
+        # stepping the scheduler  
+        scheduler.step()
+
         # log train results after an epoch
         total_epoch_time = time.time() - epoch_start_time
         wandb.log({'train_epoch': {
@@ -164,6 +173,7 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
                         'optimizer': optimizer.state_dict()},
                         model_save_path)
                             
+    fp.close()
     print('Finished training')
 
 def load_train_test_set(sets):
@@ -188,6 +198,17 @@ def get_adjustment_points(n_epochs, lr_adjustment_count):
         adjustment_points.append(i * adjustment_interval)
 
     return adjustment_points
+
+def get_loss_weights(split_set, records):
+    ratio = np.array([0, 0, 0])
+    for image in split_set:
+        image = str.split(image)[0]
+        for record in records:
+            if record[0] in image:
+                ratio = ratio + [record[2] == 'CN', record[2] == 'MCI', record[2] == 'AD']
+
+    return 1 - (ratio / len(split_set))
+
 
 if __name__ == '__main__':
     # settting
@@ -247,6 +268,9 @@ if __name__ == '__main__':
 
 
     train_set, val_set, test_set = load_train_test_set(sets)
+    records = pd.read_csv(os.path.join(sets.data_root, "labels.csv")).to_numpy()
+    train_loss_weights = get_loss_weights(train_set, records)
+    print(f"Entropy Loss Weights: {train_loss_weights}")
 
     # intitialize datasets
     train_dataset = ADNIDataset(train_set, sets.data_root, True)
@@ -275,4 +299,5 @@ if __name__ == '__main__':
 
     # training
     train(train_loader, test_loader, model, optimizer, scheduler, total_epochs=sets.n_epochs,
-           save_interval=sets.save_intervals, save_folder=sets.save_folder, sets=sets) 
+           save_interval=sets.save_intervals, save_folder=sets.save_folder, logging_file=sets.logging_file,
+           train_loss_weights=train_loss_weights, sets=sets) 

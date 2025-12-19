@@ -157,7 +157,7 @@ class ResNet(nn.Module):
 
         for m in self.modules():
             if isinstance(m, nn.Conv3d):
-                m.weight = nn.init.kaiming_normal(m.weight, mode='fan_out')
+                m.weight = nn.init.kaiming_normal_(m.weight, mode='fan_out')
             elif isinstance(m, nn.BatchNorm3d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
@@ -307,7 +307,7 @@ class ADClassification(nn.Module):
         #     nn.Softmax()
         # )
         self.fc = nn.Linear(512*self.block.expansion, 3)
-        self.sm = nn.Softmax()
+        self.sm = nn.Softmax(dim=1)
 
     def forward(self, x):
         x = self.backbone(x)
