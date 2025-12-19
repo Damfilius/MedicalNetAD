@@ -5,7 +5,7 @@ Written by Whalechen
 
 from setting import parse_opts 
 from datasets.brains18 import BrainS18Dataset, ADNIDataset
-from model import generate_model
+import models.resnet as resnet
 import torch
 import numpy as np
 from torch import nn
@@ -19,10 +19,11 @@ import os
 from split_adni import split_dataset
 import wandb
 from dataset_utils import AverageMeter, calculate_accuracy
-# import tqdm as tqdm
+import math
+from model import generate_ad_model
 # import test
 
-os.environ['WANDB_API_KEY'] = '3dcea36a6508b37c26d8c73c01243a435a165578'
+os.environ['WANDB_API_KEY'] = ''
 
 def test(data_loader, model, loss_fn):
     model.eval() # for testing 
@@ -108,13 +109,13 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
 
             # update the weights
             optimizer.zero_grad()
-            loss.backward()                
+            loss.backward()
             optimizer.step()
 
             # log the data
-            wandb.log({'train_batch': {
-                    'loss': losses.val,
-                    'acc': accuracies.val}})
+            # wandb.log({'train_batch': {
+            #         'loss': losses.val,
+            #         'acc': accuracies.val}})
 
             # update the average time
             batch_time.update(time.time() - batch_start_time)
@@ -169,17 +170,24 @@ def load_train_test_set(sets):
     # prepare the file names of the train and test sets
     train_file = os.path.join(sets.data_root,"train.txt")
     test_file = os.path.join(sets.data_root,"test.txt")
-    train_set, test_set = [], []
+    train_set, val_set, test_set = [], [], []
     if os.path.getsize(train_file) > 0 and os.path.getsize(test_file) > 0:
         with open(train_file,"r+") as fp:
             train_set = fp.readlines()
         with open(test_file,"r+") as fp:
             test_set = fp.readlines()
     else:
-        train_set, test_set = split_dataset(sets.data_root,sets.split_ratio)
+        train_set, val_set, test_set = split_dataset(sets.data_root, np.array(sets.split_ratio))
 
-    return train_set, test_set
+    return train_set, val_set, test_set
 
+def get_adjustment_points(n_epochs, lr_adjustment_count):
+    adjustment_interval = math.ceil(n_epochs / lr_adjustment_count+1)
+    adjustment_points = []
+    for i in range(adjustment_interval):
+        adjustment_points.append(i * adjustment_interval)
+
+    return adjustment_points
 
 if __name__ == '__main__':
     # settting
@@ -197,22 +205,35 @@ if __name__ == '__main__':
         sets.input_H = 28
         sets.input_W = 28
        
-     
-    
+
+    # getting data
+    sets.phase = 'train'
+    if sets.no_cuda:
+        sets.pin_memory = False
+    else:
+        sets.pin_memory = True    
+
     # getting model
     torch.manual_seed(sets.manual_seed)
-    model, parameters = generate_model(sets) 
-    print (model)
-    # optimizer
-    if sets.ci_test:
-        params = [{'params': parameters, 'lr': sets.learning_rate}]
-    else:
-        params = [
-                { 'params': parameters['base_parameters'], 'lr': sets.learning_rate }, 
-                { 'params': parameters['new_parameters'], 'lr': sets.learning_rate*100 }
-                ]
-    optimizer = torch.optim.Adam(parameters['new_parameters'], lr=sets.learning_rate)
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, [10,20,30,40], gamma=0.5)
+
+    # use gpu device if available
+    device = (
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
+    )
+    print(f"Using {device} device")
+
+    # initializing the model
+    model = generate_ad_model(sets,device)
+
+    # initializing the optimizer and the scheduler 
+    optimizer = torch.optim.Adam(model.parameters(), lr=sets.learning_rate)
+    adjustment_points = get_adjustment_points(sets.n_epochs, sets.lr_adjustment_count)
+    print(f"Adjusting intervals at {adjustment_points} epochs")
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, adjustment_points, gamma=0.5)
     
     # train from resume
     if sets.resume_path:
@@ -224,21 +245,19 @@ if __name__ == '__main__':
             print("=> loaded checkpoint '{}' (epoch {})"
               .format(sets.resume_path, checkpoint['epoch']))
 
-    # getting data
-    sets.phase = 'train'
-    if sets.no_cuda:
-        sets.pin_memory = False
-    else:
-        sets.pin_memory = True    
 
-    train_set, test_set = load_train_test_set(sets)
+    train_set, val_set, test_set = load_train_test_set(sets)
 
     # intitialize datasets
-    training_dataset = ADNIDataset(train_set, sets.data_root, True)
-    testing_dataset = ADNIDataset(test_set, sets.data_root, True)
-    # training_dataset = BrainS18Dataset(sets.data_root, sets.img_list, sets)
-    train_loader = DataLoader(training_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
-    test_loader = DataLoader(testing_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
+    train_dataset = ADNIDataset(train_set, sets.data_root, True)
+    train_loader = DataLoader(train_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
+
+    if len(val_set) != 0:
+        val_dataset = ADNIDataset(val_set, sets.data_root, True)
+        val_loader = DataLoader(val_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
+
+    test_dataset = ADNIDataset(test_set, sets.data_root, True)
+    test_loader = DataLoader(test_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
 
     # setup the logger
     wandb.init(

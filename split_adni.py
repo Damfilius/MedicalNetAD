@@ -64,7 +64,7 @@ def get_split(records_by_subject, size, class_ratio):
     return split_set, added
 
 def print_info(split, added, name):
-    print(f"{name} Split: \nSize: {len(split)} \nAD vs. CN vs. MCI {added} \n Ratios: {added / np.sum(added)}")
+    print(f"{name} Split: \nSize: {len(split)} \nAD vs. CN vs. MCI {added} \nRatios: {added / np.sum(added)}\n")
 
 def split_dataset(root_dir, split_ratio):
     labels_file = os.path.join(root_dir,"labels.csv")
@@ -95,9 +95,9 @@ def split_dataset(root_dir, split_ratio):
     write_split(records_by_subject, filename)
 
     # create the split
-    val_set, val_added = get_split(records_by_subject, val_size, class_ratio)
+    # val_set, val_added = get_split(records_by_subject, val_size, class_ratio)
+    val_set, val_added = [], [0,0,0]
     test_set, test_added = get_split(records_by_subject, test_size, class_ratio)
-    # train_set, train_added = get_split(records_by_subject, train_size, class_ratio)
     train_set = []
     train_added = np.array([0, 0, 0])
     for subject_records in records_by_subject:
