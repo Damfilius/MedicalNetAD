@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import time
 import random
+import math
 
 def write_split(split,filename):
     with open(filename,"w+") as fp:
@@ -64,7 +65,7 @@ def get_split(records_by_subject, size, class_ratio):
     return split_set, added
 
 def print_info(split, added, name):
-    print(f"{name} Split: \nSize: {len(split)} \nAD vs. CN vs. MCI {added} \nRatios: {added / np.sum(added)}\n")
+    print(f"{name} Split: \nSize: {len(split)} \nCN vs. MCI vs. AD {added} \nRatios: {added / np.sum(added)}\n")
 
 def split_dataset(root_dir, split_ratio):
     labels_file = os.path.join(root_dir,"labels.csv")
@@ -129,5 +130,104 @@ def split_dataset(root_dir, split_ratio):
             fp.write(f"{image_id}\n")
 
     return train_set, val_set, test_set
+
+def remove_majority(records_by_subject):
+    classes = ['CN','MCI','AD']
+
+    # get statistics
+    counts = np.array([0,0,0])
+    for subject in records_by_subject:
+        for record in subject:
+            counts = counts + np.array([record[2] == 'CN', record[2] == 'MCI', record[2] == 'AD'])
+
+    # find the difference between the number of most popular class and the middle popular class
+    largest = np.argmax(counts)
+    smallest = np.argmin(counts)
+    middle = 3 - (largest + smallest)
+    diff = counts[largest] - counts[middle]
+    print(f"Largest class: {classes[largest]}")
+    print(f"Middle class: {classes[middle]}")
+    print(f"Smallest class: {classes[smallest]}")
+    print(f"Removing {diff} scans")
+
+    # bring down the count of the most popular class
+    subject_idx = 0
+    while(diff > 0):
+        subject = records_by_subject[subject_idx]
+        inds = np.arange(len(subject))[::-1]
+        for idx in inds:
+            record = subject[idx]
+            if record[2] != classes[largest]:
+                continue
+
+            del subject[idx]
+            diff -= 1
+            if len(subject) == 0:
+                del records_by_subject[subject_idx]
+            break
+        subject_idx = (subject_idx + 1) % len(records_by_subject)
+
+def split_even(root_dir, split_ratio):
+    # read the csv file
+    labels_file = os.path.join(root_dir,"labels.csv")
+    df = pd.read_csv(labels_file)
+    records = df.to_numpy()
+    subjects = np.unique(records[:,1])
+
+    # cluster records by subject
+    records_by_subject = []
+    for subject in subjects:
+        subject_records = []
+        for record in records:
+            if subject in record:
+                subject_records.append(record)
+        records_by_subject.append(subject_records)
+
+    # balance out the dataset a bit
+    remove_majority(records_by_subject)
+    
+    # print out dataset statistics
+    counts = np.array([0,0,0])
+    for subject in records_by_subject:
+        for record in subject:
+            counts = counts + np.array([record[2] == 'CN', record[2] == 'MCI', record[2] == 'AD'])
+    total = np.sum(counts)
+    ratio = counts / total
+    print(f"COUNT CN vs MCI vs AD: {counts}")
+    print(f"RATIO CN vs MCI vs AD: {ratio}")
+
+    # shuffle the array contents
+    random.seed(1)
+    random.shuffle(records_by_subject)
+
+    # get the test and train splits
+    train_size, test_size = total * split_ratio 
+    print(f"Train size: {train_size}")
+    print(f"Test size: {test_size}\n")
+
+    test_set, test_added = get_split(records_by_subject, test_size, ratio)
+    train_set, train_added = [], np.array([0,0,0])
+    for subject in records_by_subject:
+        for record in subject:
+            train_set.append(f"{record[0]}.nii")
+            train_added = train_added + np.array([record[2] == 'CN', record[2] == 'MCI', record[2] == 'AD'])
+
+    # print information about the splits
+    print_info(train_set, train_added, "Train")
+    print_info(test_set, test_added, "Test")
+
+    # train and test file name files
+    train_names = os.path.join(root_dir,"train.txt")
+    test_names = os.path.join(root_dir,"test.txt")
+
+    with open(train_names,"w+") as fp:
+        for image_id in train_set:
+            fp.write(f"{image_id}\n")
+
+    with open(test_names,"w+") as fp:
+        for image_id in test_set:
+            fp.write(f"{image_id}\n")
+
+    return train_set, test_set
         
     
