@@ -201,11 +201,13 @@ def split_even(root_dir, split_ratio):
     random.shuffle(records_by_subject)
 
     # get the test and train splits
-    train_size, test_size = total * split_ratio 
+    train_size, val_size, test_size = total * split_ratio 
     print(f"Train size: {train_size}")
     print(f"Test size: {test_size}\n")
 
     test_set, test_added = get_split(records_by_subject, test_size, ratio)
+    val_set, val_added = get_split(records_by_subject, val_size, ratio)
+    # put the rest in the train set
     train_set, train_added = [], np.array([0,0,0])
     for subject in records_by_subject:
         for record in subject:
@@ -214,20 +216,26 @@ def split_even(root_dir, split_ratio):
 
     # print information about the splits
     print_info(train_set, train_added, "Train")
+    print_info(val_set, val_added, "Validation")
     print_info(test_set, test_added, "Test")
 
     # train and test file name files
     train_names = os.path.join(root_dir,"train.txt")
+    val_names = os.path.join(root_dir,"val.txt")
     test_names = os.path.join(root_dir,"test.txt")
 
     with open(train_names,"w+") as fp:
         for image_id in train_set:
             fp.write(f"{image_id}\n")
 
+    with open(val_names,"w+") as fp:
+        for image_id in val_set:
+            fp.write(f"{image_id}\n")
+
     with open(test_names,"w+") as fp:
         for image_id in test_set:
             fp.write(f"{image_id}\n")
 
-    return train_set, test_set
+    return train_set, val_set, test_set
         
     

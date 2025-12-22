@@ -16,19 +16,19 @@ import time
 from utils.logger import log
 from scipy import ndimage
 import os
-from split_adni import split_dataset
+from split_adni import split_dataset, split_even
 import wandb
 from dataset_utils import AverageMeter, calculate_accuracy
 import math
-from model import generate_ad_model
+from model import generate_ad_model, generate_lenet
 from tqdm import tqdm
 import pandas as pd
 import os
 # import test
 
-os.environ['WANDB_API_KEY'] = ''
+os.environ['WANDB_API_KEY'] = '3dcea36a6508b37c26d8c73c01243a435a165578'
 
-def test(data_loader, model, loss_fn):
+def test(data_loader, model, loss_fn, is_val):
     model.eval() # for testing 
     device = next(model.parameters()).device
 
@@ -61,18 +61,27 @@ def test(data_loader, model, loss_fn):
 
         # log the results
         total_test_time = time.time() - test_start_time
-        wandb.log({'test': {
-                'loss': losses.avg,
-                'acc': accuracies.avg,
-                'avg_batch_time': batch_time.avg,
-                'test_time': total_test_time}})
+        if is_val:
+            wandb.log({'val': {
+                    'loss': losses.avg,
+                    'acc': accuracies.avg,
+                    'avg_batch_time': batch_time.avg,
+                    'test_time': total_test_time}})
+        else:
+            wandb.log({'test': {
+                    'loss': losses.avg,
+                    'acc': accuracies.avg,
+                    'avg_batch_time': batch_time.avg,
+                    'test_time': total_test_time}})
 
-def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
+    return {'loss': losses.avg, 'acc': accuracies.avg}
+
+def train(data_loader, val_loader, test_loader, model, optimizer, scheduler, total_epochs,
           save_interval, save_folder, logging_file, train_loss_weights, sets):
     # settings
     model.train()
     device = next(model.parameters()).device
-    loss_fn = nn.CrossEntropyLoss(weight=torch.tensor(train_loss_weights))
+    loss_fn = nn.CrossEntropyLoss(weight=torch.tensor(train_loss_weights,dtype=torch.float32))
     loss_fn = loss_fn.to(device)
 
     batches_per_epoch = len(data_loader)
@@ -91,6 +100,8 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
         data_time = AverageMeter()
         losses = AverageMeter()
         accuracies = AverageMeter()
+
+        last_loss = 9999999
         
         # train_loop = tqdm(data_loader)
         epoch_start_time = time.time()
@@ -153,9 +164,27 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
                 'avg_batch_time': batch_time.avg,
                 'lr': optimizer.param_groups[0]['lr']}})
 
-        # run test every 20 epochs
-        if epoch % 10 == 0:
-            test(test_loader, model, loss_fn)
+        # run validation every 3 epochs
+        if epoch % 3 == 0:
+            results = test(val_loader, model, loss_fn, True)
+            if results['loss'] > last_loss:
+                print("Early stopping as the last epoch produced a higher loss - Saving checkpoint")
+                model_save_path = '{}_epoch_{}_batch_{}.pth.tar'.format(save_folder, epoch, batch_id)
+                model_save_dir = os.path.dirname(model_save_path)
+                if not os.path.exists(model_save_dir):
+                    os.makedirs(model_save_dir)
+                
+                # log.info('Save checkpoints: epoch = {}, batch_id = {}'.format(epoch, batch_id)) 
+                wandb.log({"checkpoint": {"epoch": epoch}})
+                torch.save({
+                            'ecpoch': epoch,
+                            'batch_id': batch_id,
+                            'state_dict': model.state_dict(),
+                            'optimizer': optimizer.state_dict()},
+                            model_save_path)
+                break
+            else:
+                last_loss = results['loss']
 
         # save model
         if epoch % save_interval == 0:
@@ -174,21 +203,30 @@ def train(data_loader, test_loader, model, optimizer, scheduler, total_epochs,
                         model_save_path)
                             
     fp.close()
+
+    test_results = test(test_loader, model, loss_fn, False)
+    print(f"Testing Accuracy: {test_results['acc']}")
+    print(f"Testing Loss: {test_results['loss']}")
     print('Finished training')
 
 def load_train_test_set(sets):
     # prepare the file names of the train and test sets
     train_file = os.path.join(sets.data_root,"train.txt")
+    val_file = os.path.join(sets.data_root,"val.txt")
     test_file = os.path.join(sets.data_root,"test.txt")
     train_set, val_set, test_set = [], [], []
-    if os.path.getsize(train_file) > 0 and os.path.getsize(test_file) > 0:
+    if os.path.getsize(train_file) > 0 and os.path.getsize(val_file) > 0 and os.path.getsize(test_file) > 0:
         with open(train_file,"r+") as fp:
             train_set = fp.readlines()
+        with open(val_file,"r+") as fp:
+            val_set = fp.readlines()
         with open(test_file,"r+") as fp:
             test_set = fp.readlines()
     else:
-        train_set, val_set, test_set = split_dataset(sets.data_root, np.array(sets.split_ratio))
+        # train_set, val_set, test_set = split_dataset(sets.data_root, np.array(sets.split_ratio))
+        train_set, val_set, test_set = split_even(sets.data_root, np.array([0.8,0.1,0.1]))
 
+    # return train_set, val_set, test_set
     return train_set, val_set, test_set
 
 def get_adjustment_points(n_epochs, lr_adjustment_count):
@@ -250,7 +288,8 @@ if __name__ == '__main__':
     print(f"Using {device} device")
 
     # initializing the model
-    model = generate_ad_model(sets,device)
+    # model = generate_ad_model(sets,device)
+    model = generate_lenet(sets,device)
 
     # initializing the optimizer and the scheduler 
     optimizer = torch.optim.Adam(model.parameters(), lr=sets.learning_rate)
@@ -269,6 +308,7 @@ if __name__ == '__main__':
               .format(sets.resume_path, checkpoint['epoch']))
 
 
+    # train_set, val_set, test_set = load_train_test_set(sets)
     train_set, val_set, test_set = load_train_test_set(sets)
     records = pd.read_csv(os.path.join(sets.data_root, "labels.csv")).to_numpy()
     train_loss_weights = get_loss_weights(train_set, records)
@@ -278,9 +318,8 @@ if __name__ == '__main__':
     train_dataset = ADNIDataset(train_set, sets.data_root, True)
     train_loader = DataLoader(train_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
 
-    if len(val_set) != 0:
-        val_dataset = ADNIDataset(val_set, sets.data_root, True)
-        val_loader = DataLoader(val_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
+    val_dataset = ADNIDataset(val_set, sets.data_root, True)
+    val_loader = DataLoader(val_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
 
     test_dataset = ADNIDataset(test_set, sets.data_root, True)
     test_loader = DataLoader(test_dataset, batch_size=sets.batch_size, shuffle=True, num_workers=sets.num_workers, pin_memory=sets.pin_memory)
@@ -300,6 +339,6 @@ if __name__ == '__main__':
     wandb.config.update(sets) # config is a variable that holds and saves hyper parameters and inputs
 
     # training
-    train(train_loader, test_loader, model, optimizer, scheduler, total_epochs=sets.n_epochs,
+    train(train_loader, val_loader, test_loader, model, optimizer, scheduler, total_epochs=sets.n_epochs,
            save_interval=sets.save_intervals, save_folder=sets.save_folder, logging_file=sets.logging_file,
            train_loss_weights=train_loss_weights, sets=sets) 

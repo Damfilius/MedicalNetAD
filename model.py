@@ -154,3 +154,6 @@ def generate_ad_model(opt, device):
 
     # initializing the weights and biases
     return model.to(device)
+
+def generate_lenet(opt,device):
+    return resnet.LeNet3D().to(device)
